@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Messenger Web Clone - Realtime & Persistent</title>
+    <title>Messenger Web</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -18,7 +18,7 @@
             }
         }
     </script>
-    <!-- FontAwesome -->
+    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Firebase SDKs -->
     <script type="module">
@@ -26,39 +26,42 @@
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-        // Mặc định chạy Demo Local nếu chưa cấu hình Firebase
+        // =========================================================================
+        // 🔑 DÁN CẤU HÌNH FIREBASE CỦA BẠN VÀO ĐÂY ĐỂ ĐỒNG BỘ TIN NHẮN GIỮA CÁC TAB/MÁY
+        // =========================================================================
+        const DEFAULT_FIREBASE_CONFIG = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
         let app, auth, db;
-        let isDemoMode = true;
         let currentUser = null;
         let unsubscribeMessages = null;
 
-        // Lưu config vào localStorage
-        const savedConfig = localStorage.getItem('fb_config');
-        if (savedConfig) {
-            try {
-                const cfg = JSON.parse(savedConfig);
-                initFirebase(cfg);
-            } catch(e) {}
+        // Tự động khởi tạo Firebase
+        try {
+            app = initializeApp(DEFAULT_FIREBASE_CONFIG);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            setupAuthListener();
+        } catch(e) {
+            console.warn("Chưa cấu hình Firebase thật, đang chạy chế độ BroadcastChannel giữa các tab.");
         }
 
-        function initFirebase(config) {
-            try {
-                app = initializeApp(config);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                isDemoMode = false;
-                setupAuthListener();
-                showToast("Đã kết nối Firebase thành công!", "success");
-            } catch(e) {
-                console.error(e);
-                showToast("Cấu hình Firebase không hợp lệ!", "error");
+        // Kênh đồng bộ tin nhắn giữa các Tab khi chưa cắm Firebase
+        const broadcast = new BroadcastChannel('messenger_tab_sync');
+        let localMessages = JSON.parse(localStorage.getItem('shared_chat_msgs') || '[]');
+
+        broadcast.onmessage = (event) => {
+            if (event.data && event.data.type === 'NEW_MSG') {
+                localMessages.push(event.data.msg);
+                renderMessagesUI(localMessages);
             }
-        }
-
-        // Demo Mode Data Store
-        let demoUsers = JSON.parse(localStorage.getItem('demo_users') || '[]');
-        let demoMessages = JSON.parse(localStorage.getItem('demo_msgs') || '[]');
-        let currentDemoUser = JSON.parse(localStorage.getItem('demo_current') || 'null');
+        };
 
         window.addEventListener('DOMContentLoaded', () => {
             initAppUI();
@@ -67,6 +70,7 @@
         function initAppUI() {
             const root = document.getElementById('app-root');
             root.innerHTML = `
+                <!-- Auth Screen -->
                 <div id="auth-screen" class="flex h-full w-full items-center justify-center bg-gray-100 dark:bg-gray-900 p-4 transition-colors">
                     <div class="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 border border-gray-200 dark:border-gray-700">
                         <div class="text-center mb-6">
@@ -76,8 +80,6 @@
                             <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Messenger Web</h1>
                             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1" id="auth-subtitle">Đăng nhập để bắt đầu trò chuyện</p>
                         </div>
-
-                        <div id="alert-box" class="hidden mb-4 p-3 text-sm rounded-lg"></div>
 
                         <form id="auth-form" class="space-y-4">
                             <div id="name-field" class="hidden">
@@ -95,29 +97,17 @@
                             <button type="submit" id="auth-submit-btn" class="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-md transition duration-200">Đăng nhập</button>
                         </form>
 
-                        <div class="mt-4 text-center">
-                            <button id="google-login-btn" class="w-full py-2.5 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-medium rounded-xl text-sm flex items-center justify-center gap-2 transition">
-                                <i class="fa-brands fa-google text-red-500"></i> Đăng nhập bằng Google
-                            </button>
-                        </div>
-
                         <div class="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
                             <span id="auth-switch-text">Chưa có tài khoản?</span>
                             <button id="auth-switch-btn" class="text-blue-500 font-semibold hover:underline ml-1">Đăng ký ngay</button>
                         </div>
-
-                        <div class="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center text-xs text-gray-500">
-                            <span id="mode-indicator" class="px-2 py-1 bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 rounded">Chế độ: Demo Local</span>
-                            <button onclick="openConfigModal()" class="hover:text-blue-500 underline"><i class="fa-solid fa-gear"></i> Cấu hình Firebase</button>
-                        </div>
                     </div>
                 </div>
 
-                <!-- Chat Screen Template (Hidden initially) -->
+                <!-- Chat Screen -->
                 <div id="chat-screen" class="hidden h-full w-full flex bg-white dark:bg-gray-900 overflow-hidden">
                     <!-- Sidebar -->
                     <div class="w-full md:w-80 border-r border-gray-200 dark:border-gray-800 flex flex-col h-full bg-white dark:bg-gray-900">
-                        <!-- Sidebar Header -->
                         <div class="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
                             <div class="flex items-center gap-3">
                                 <div class="relative">
@@ -130,26 +120,18 @@
                                 </div>
                             </div>
                             <div class="flex items-center gap-1">
-                                <button onclick="toggleDarkMode()" class="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 transition" title="Đổi giao diện sáng/tối">
+                                <button onclick="toggleDarkMode()" class="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 transition">
                                     <i class="fa-solid fa-moon dark:hidden"></i>
                                     <i class="fa-solid fa-sun hidden dark:block text-amber-400"></i>
                                 </button>
-                                <button onclick="logout()" class="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center justify-center text-gray-600 dark:text-red-400 transition" title="Đăng xuất">
+                                <button onclick="logout()" class="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center justify-center text-gray-600 dark:text-red-400 transition">
                                     <i class="fa-solid fa-right-from-bracket"></i>
                                 </button>
                             </div>
                         </div>
 
-                        <!-- Search Box -->
-                        <div class="p-3">
-                            <div class="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 px-3 py-2 rounded-xl text-gray-500 dark:text-gray-400">
-                                <i class="fa-solid fa-magnifying-glass text-sm"></i>
-                                <input type="text" placeholder="Tìm kiếm đoạn chat..." class="bg-transparent border-none outline-none text-sm w-full dark:text-white">
-                            </div>
-                        </div>
-
                         <!-- Chat List -->
-                        <div class="flex-1 overflow-y-auto px-2 space-y-1">
+                        <div class="flex-1 overflow-y-auto p-2 space-y-1">
                             <div class="flex items-center gap-3 p-2.5 rounded-xl bg-blue-50 dark:bg-gray-800 cursor-pointer">
                                 <div class="relative">
                                     <div class="w-12 h-12 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 text-white flex items-center justify-center font-bold text-lg shadow">G</div>
@@ -157,99 +139,52 @@
                                 </div>
                                 <div class="flex-1 min-w-0">
                                     <div class="flex justify-between items-baseline">
-                                        <h4 class="font-semibold text-gray-900 dark:text-white text-sm truncate">Phòng Chat Chung (Global)</h4>
-                                        <span class="text-xs text-blue-500 font-medium">Mới nhất</span>
+                                        <h4 class="font-semibold text-gray-900 dark:text-white text-sm truncate">Phòng Chat Chung</h4>
+                                        <span class="text-xs text-blue-500 font-medium">Online</span>
                                     </div>
-                                    <p id="last-message-preview" class="text-xs text-gray-500 dark:text-gray-400 truncate">Nhấp để trò chuyện cùng mọi người...</p>
+                                    <p id="last-message-preview" class="text-xs text-gray-500 dark:text-gray-400 truncate">Sẵn sàng nhắn tin...</p>
                                 </div>
                             </div>
-                        </div>
-
-                        <!-- Footer Info -->
-                        <div class="p-3 border-t border-gray-100 dark:border-gray-800 text-center text-xs text-gray-400 flex justify-between items-center">
-                            <span>Messenger Web v2.0</span>
-                            <button onclick="openConfigModal()" class="hover:text-blue-500 underline">Cài đặt Firebase</button>
                         </div>
                     </div>
 
                     <!-- Main Chat Area -->
                     <div class="hidden md:flex flex-1 flex-col h-full bg-white dark:bg-gray-900">
-                        <!-- Chat Header -->
-                        <div class="px-6 py-3.5 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-white/80 dark:bg-gray-900/80 backdrop-blur">
+                        <!-- Header -->
+                        <div class="px-6 py-3.5 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between bg-white dark:bg-gray-900">
                             <div class="flex items-center gap-3">
-                                <div class="relative">
-                                    <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 text-white flex items-center justify-center font-bold shadow">G</div>
-                                    <div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-900 rounded-full"></div>
-                                </div>
+                                <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-500 text-white flex items-center justify-center font-bold shadow">G</div>
                                 <div>
                                     <h3 class="font-bold text-gray-900 dark:text-white text-sm">Phòng Chat Chung (Global Messenger)</h3>
-                                    <p class="text-xs text-gray-500 dark:text-gray-400">Trò chuyện trực tuyến real-time</p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Trực tuyến real-time</p>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-3 text-blue-500 text-lg">
-                                <button class="w-9 h-9 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center transition"><i class="fa-solid fa-phone"></i></button>
-                                <button class="w-9 h-9 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center transition"><i class="fa-solid fa-video"></i></button>
-                                <button class="w-9 h-9 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center transition"><i class="fa-solid fa-circle-info"></i></button>
+                        </div>
+
+                        <!-- Messages Container: Dùng flex-col + justify-end để tin nhắn đẩy từ DƯỚI LÊN -->
+                        <div id="messages-wrapper" class="flex-1 overflow-y-auto p-6 bg-gray-50/50 dark:bg-gray-950/30 flex flex-col justify-end">
+                            <div id="messages-container" class="space-y-4 w-full">
+                                <!-- Tin nhắn được render vào đây -->
                             </div>
                         </div>
 
-                        <!-- Messages Box -->
-                        <div id="messages-container" class="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50 dark:bg-gray-950/30">
-                            <!-- Tin nhắn sẽ được render ở đây -->
-                        </div>
-
-                        <!-- Chat Input Form -->
+                        <!-- Input Bar -->
                         <div class="p-4 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
                             <form id="chat-form" class="flex items-center gap-3">
-                                <button type="button" class="text-blue-500 hover:bg-blue-50 dark:hover:bg-gray-800 w-10 h-10 rounded-full flex items-center justify-center transition text-lg"><i class="fa-solid fa-circle-plus"></i></button>
-                                <button type="button" class="text-blue-500 hover:bg-blue-50 dark:hover:bg-gray-800 w-10 h-10 rounded-full flex items-center justify-center transition text-lg"><i class="fa-solid fa-image"></i></button>
-                                <div class="flex-1 relative">
-                                    <input type="text" id="message-input" autocomplete="off" placeholder="Aa Nhập tin nhắn..." class="w-full bg-gray-100 dark:bg-gray-800 dark:text-white px-4 py-2.5 rounded-full outline-none text-sm focus:ring-2 focus:ring-blue-500">
-                                </div>
+                                <input type="text" id="message-input" autocomplete="off" placeholder="Aa Nhập tin nhắn..." class="flex-1 bg-gray-100 dark:bg-gray-800 dark:text-white px-4 py-2.5 rounded-full outline-none text-sm focus:ring-2 focus:ring-blue-500">
                                 <button type="submit" class="w-10 h-10 rounded-full bg-blue-500 hover:bg-blue-600 text-white flex items-center justify-center transition shadow-md"><i class="fa-solid fa-paper-plane text-sm"></i></button>
                             </form>
                         </div>
                     </div>
                 </div>
 
-                <!-- Firebase Config Modal -->
-                <div id="config-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
-                    <div class="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 dark:border-gray-700">
-                        <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-lg font-bold text-gray-900 dark:text-white"><i class="fa-solid fa-database text-blue-500"></i> Cấu hình kết nối Firebase</h3>
-                            <button onclick="closeConfigModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i class="fa-solid fa-xmark text-xl"></i></button>
-                        </div>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">Dán đoạn mã Firebase Config của bạn vào đây để các thiết bị khác nhau có thể nhắn tin thật với nhau qua mạng.</p>
-                        
-                        <div class="space-y-3">
-                            <div>
-                                <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">Dán toàn bộ mã JSON Firebase Config hoặc JSON object:</label>
-                                <textarea id="config-json-input" rows="6" class="w-full p-3 font-mono text-xs rounded-xl border border-gray-300 dark:border-gray-600 dark:bg-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500" placeholder='{
-  "apiKey": "AIzaSy...",
-  "authDomain": "...",
-  "projectId": "...",
-  "storageBucket": "...",
-  "messagingSenderId": "...",
-  "appId": "..."
-}'></textarea>
-                            </div>
-                        </div>
-
-                        <div class="flex justify-end gap-3 mt-6">
-                            <button onclick="closeConfigModal()" class="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">Hủy</button>
-                            <button onclick="saveFirebaseConfig()" class="px-5 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-semibold shadow transition">Lưu & Kết nối</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Toast Notification -->
+                <!-- Toast -->
                 <div id="toast" class="fixed bottom-5 right-5 transform translate-y-20 opacity-0 transition-all duration-300 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white"></div>
             `;
 
             setupLogic();
         }
 
-        // Logic xử lý ứng dụng
         let isRegisterMode = false;
 
         function setupLogic() {
@@ -259,10 +194,8 @@
             const nameField = document.getElementById('name-field');
             const authSubtitle = document.getElementById('auth-subtitle');
             const authSubmitBtn = document.getElementById('auth-submit-btn');
-            const googleLoginBtn = document.getElementById('google-login-btn');
             const chatForm = document.getElementById('chat-form');
 
-            // Chuyển đổi qua lại giữa Đăng nhập / Đăng ký
             authSwitchBtn.addEventListener('click', () => {
                 isRegisterMode = !isRegisterMode;
                 if (isRegisterMode) {
@@ -280,40 +213,17 @@
                 }
             });
 
-            // Xử lý Submit Form Đăng nhập/Đăng ký
             authForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const email = document.getElementById('input-email').value;
                 const password = document.getElementById('input-password').value;
                 const name = document.getElementById('input-name').value;
 
-                if (isDemoMode) {
-                    // Xử lý Demo Mode LocalStorage
-                    if (isRegisterMode) {
-                        if (!name) { showToast("Vui lòng nhập tên hiển thị!", "error"); return; }
-                        const existing = demoUsers.find(u => u.email === email);
-                        if (existing) { showToast("Email này đã tồn tại trong Demo Mode!", "error"); return; }
-                        const newUser = { uid: 'demo_' + Date.now(), email, name, avatar: name.charAt(0).toUpperCase() };
-                        demoUsers.push(newUser);
-                        localStorage.setItem('demo_users', JSON.stringify(demoUsers));
-                        currentDemoUser = newUser;
-                        localStorage.setItem('demo_current', JSON.stringify(currentDemoUser));
-                        showToast("Đăng ký thành công (Demo Mode)!", "success");
-                        loginSuccess(currentDemoUser);
-                    } else {
-                        const user = demoUsers.find(u => u.email === email);
-                        if (!user) { showToast("Không tìm thấy tài khoản trong Demo! Hãy bấm Đăng ký trước.", "error"); return; }
-                        currentDemoUser = user;
-                        localStorage.setItem('demo_current', JSON.stringify(currentDemoUser));
-                        showToast("Đăng nhập thành công (Demo Mode)!", "success");
-                        loginSuccess(currentDemoUser);
-                    }
-                } else {
-                    // Firebase thật
+                if (auth) {
                     try {
                         if (isRegisterMode) {
-                            const cred = await createUserWithEmailAndPassword(auth, email, password);
-                            showToast("Đăng ký tài khoản thành công!", "success");
+                            await createUserWithEmailAndPassword(auth, email, password);
+                            showToast("Đăng ký thành công!", "success");
                         } else {
                             await signInWithEmailAndPassword(auth, email, password);
                             showToast("Đăng nhập thành công!", "success");
@@ -321,68 +231,56 @@
                     } catch (err) {
                         showToast("Lỗi: " + err.message, "error");
                     }
-                }
-            });
-
-            // Đăng nhập Google
-            googleLoginBtn.addEventListener('click', async () => {
-                if (isDemoMode) {
-                    const googleUser = { uid: 'google_demo_1', email: 'googleuser@gmail.com', name: 'Google User', avatar: 'G' };
-                    currentDemoUser = googleUser;
-                    localStorage.setItem('demo_current', JSON.stringify(currentDemoUser));
-                    showToast("Đăng nhập Google (Demo) thành công!", "success");
-                    loginSuccess(googleUser);
                 } else {
-                    try {
-                        const provider = new GoogleAuthProvider();
-                        await signInWithPopup(auth, provider);
-                        showToast("Đăng nhập Google thành công!", "success");
-                    } catch (err) {
-                        showToast("Lỗi Google Auth: " + err.message, "error");
-                    }
+                    // Fallback khi chưa cấu hình Firebase
+                    const user = { uid: email, email, name: name || email.split('@')[0], avatar: (name || email).charAt(0).toUpperCase() };
+                    localStorage.setItem('temp_user', JSON.stringify(user));
+                    loginSuccess(user);
                 }
             });
 
-            // Gửi tin nhắn
             chatForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const input = document.getElementById('message-input');
                 const text = input.value.trim();
                 if (!text) return;
 
-                const user = isDemoMode ? currentDemoUser : currentUser;
-                if (!user) return;
+                const user = currentUser || JSON.parse(localStorage.getItem('temp_user') || '{}');
+                if (!user.email) return;
 
                 const messageData = {
                     text: text,
                     uid: user.uid,
                     senderName: user.name || user.email.split('@')[0],
                     avatar: (user.name || user.email).charAt(0).toUpperCase(),
-                    createdAt: isDemoMode ? Date.now() : serverTimestamp()
+                    createdAt: Date.now()
                 };
 
-                if (isDemoMode) {
-                    demoMessages.push(messageData);
-                    localStorage.setItem('demo_msgs', JSON.stringify(demoMessages));
-                    input.value = '';
-                    renderDemoMessages();
-                } else {
+                if (db) {
                     try {
+                        messageData.createdAt = serverTimestamp();
                         await addDoc(collection(db, "messages"), messageData);
                         input.value = '';
                     } catch (err) {
                         showToast("Lỗi gửi tin nhắn: " + err.message, "error");
                     }
+                } else {
+                    // Đồng bộ tin nhắn giữa các tab bằng BroadcastChannel & LocalStorage
+                    localMessages.push(messageData);
+                    localStorage.setItem('shared_chat_msgs', JSON.stringify(localMessages));
+                    broadcast.postMessage({ type: 'NEW_MSG', msg: messageData });
+                    renderMessagesUI(localMessages);
+                    input.value = '';
                 }
             });
 
-            // Kiểm tra trạng thái đăng nhập sẵn có khi load trang (F5 không mất trạng thái)
-            if (isDemoMode && currentDemoUser) {
-                loginSuccess(currentDemoUser);
+            // Tự động giữ phiên đăng nhập local nếu không dùng Firebase Auth
+            const savedTempUser = localStorage.getItem('temp_user');
+            if (!auth && savedTempUser) {
+                loginSuccess(JSON.parse(savedTempUser));
             }
         }
 
-        // Firebase Auth State Listener
         function setupAuthListener() {
             onAuthStateChanged(auth, (user) => {
                 if (user) {
@@ -402,13 +300,14 @@
         }
 
         function loginSuccess(user) {
+            currentUser = user;
             document.getElementById('auth-screen').classList.add('hidden');
             document.getElementById('chat-screen').classList.remove('hidden');
             document.getElementById('user-display-name').textContent = user.name || user.email;
             document.getElementById('user-avatar').textContent = user.avatar || user.email.charAt(0).toUpperCase();
 
-            if (isDemoMode) {
-                renderDemoMessages();
+            if (!db) {
+                renderMessagesUI(localMessages);
             }
         }
 
@@ -419,17 +318,14 @@
         }
 
         window.logout = function() {
-            if (isDemoMode) {
-                currentDemoUser = null;
-                localStorage.removeItem('demo_current');
-                logoutSuccess();
-                showToast("Đã đăng xuất!", "info");
-            } else {
+            if (auth) {
                 signOut(auth);
+            } else {
+                localStorage.removeItem('temp_user');
+                logoutSuccess();
             }
         }
 
-        // Realtime Firestore Messages
         function listenToFirestoreMessages() {
             const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
             unsubscribeMessages = onSnapshot(q, (snapshot) => {
@@ -441,25 +337,21 @@
             });
         }
 
-        function renderDemoMessages() {
-            renderMessagesUI(demoMessages);
-        }
-
         function renderMessagesUI(msgs) {
             const container = document.getElementById('messages-container');
-            const activeUser = isDemoMode ? currentDemoUser : currentUser;
-            if (!activeUser) return;
+            const wrapper = document.getElementById('messages-wrapper');
+            const activeUser = currentUser || JSON.parse(localStorage.getItem('temp_user') || '{}');
+            if (!activeUser.email) return;
 
             let html = '';
             msgs.forEach((m) => {
-                const isMe = m.uid === activeUser.uid;
+                const isMe = m.uid === activeUser.uid || m.senderName === activeUser.name;
                 if (isMe) {
                     html += `
                         <div class="flex flex-col items-end space-y-1">
                             <div class="flex items-end gap-2 max-w-[70%]">
                                 <div class="bg-blue-500 text-white px-4 py-2.5 rounded-2xl rounded-br-none shadow-sm text-sm break-words">${escapeHtml(m.text)}</div>
                             </div>
-                            <span class="text-[10px] text-gray-400 mr-1">Đã gửi</span>
                         </div>
                     `;
                 } else {
@@ -476,7 +368,7 @@
             });
 
             container.innerHTML = html;
-            container.scrollTop = container.scrollHeight;
+            wrapper.scrollTop = wrapper.scrollHeight;
 
             if (msgs.length > 0) {
                 const last = msgs[msgs.length - 1];
@@ -489,72 +381,19 @@
             return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         }
 
-        // Cấu hình Firebase Modal
-        window.openConfigModal = function() {
-            document.getElementById('config-modal').classList.remove('hidden');
-            document.getElementById('config-modal').classList.add('flex');
-            const saved = localStorage.getItem('fb_config_raw');
-            if (saved) {
-                document.getElementById('config-json-input').value = saved;
-            }
-        }
-
-        window.closeConfigModal = function() {
-            document.getElementById('config-modal').classList.remove('hidden', 'flex');
-            document.getElementById('config-modal').classList.add('hidden');
-        }
-
-        window.saveFirebaseConfig = function() {
-            const raw = document.getElementById('config-json-input').value.trim();
-            try {
-                // Thử parse JSON hoặc trích xuất object config
-                let cfg;
-                if (raw.startsWith('{')) {
-                    cfg = JSON.parse(raw);
-                } else {
-                    // Nếu user dán cả đoạn const firebaseConfig = {...}
-                    const match = raw.match(/\{[\s\S]*\}/);
-                    if (match) {
-                        cfg = eval('(' + match[0] + ')');
-                    }
-                }
-
-                if (cfg && cfg.apiKey) {
-                    localStorage.setItem('fb_config', JSON.stringify(cfg));
-                    localStorage.setItem('fb_config_raw', raw);
-                    closeConfigModal();
-                    initFirebase(cfg);
-                    document.getElementById('mode-indicator').textContent = 'Chế độ: Firebase Realtime';
-                    document.getElementById('mode-indicator').className = 'px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded';
-                } else {
-                    showToast("Cấu hình thiếu apiKey hoặc không hợp lệ!", "error");
-                }
-            } catch (e) {
-                showToast("Lỗi phân tích cú pháp JSON config!", "error");
-            }
-        }
-
-        // Dark Mode Toggle
         window.toggleDarkMode = function() {
             const htmlEl = document.documentElement;
             if (htmlEl.classList.contains('dark')) {
                 htmlEl.classList.remove('dark');
-                localStorage.setItem('theme', 'light');
             } else {
                 htmlEl.classList.add('dark');
-                localStorage.setItem('theme', 'dark');
             }
         }
 
-        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-            document.documentElement.classList.add('dark');
-        }
-
-        // Toast Helper
         function showToast(message, type = 'success') {
             const toast = document.getElementById('toast');
             toast.textContent = message;
-            toast.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white transition-all duration-300 ${type === 'error' ? 'bg-red-500' : type === 'info' ? 'bg-blue-500' : 'bg-green-500'}`;
+            toast.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white transition-all duration-300 ${type === 'error' ? 'bg-red-500' : 'bg-green-500'}`;
             toast.classList.remove('translate-y-20', 'opacity-0');
             setTimeout(() => {
                 toast.classList.add('translate-y-20', 'opacity-0');
