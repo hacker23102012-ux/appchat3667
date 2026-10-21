@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Messenger Web - Realtime Chat</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Inter Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            messenger: {
+              blue: '#0084FF',
+              lightBlue: '#0099FF',
+              darkBg: '#18191A',
+              darkSidebar: '#242526',
+              darkBubble: '#3A3B3C',
+              lightBg: '#FFFFFF',
+              lightSidebar: '#F0F2F5',
+              lightBubble: '#E4E6EB'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <style>
+    /* Custom Scrollbar Styles */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.4);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(156, 163, 175, 0.6);
+    }
+    .message-shadow {
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+  </style>
+</head>
+<body class="bg-gray-100 dark:bg-messenger-darkBg text-gray-800 dark:text-gray-100 font-sans h-screen flex flex-col overflow-hidden antialiased">
+
+  <!-- APP CONTAINER -->
+  <div id="app" class="flex-1 flex flex-col h-full w-full relative">
+
+    <!-- TOP HEADER / BANNER -->
+    <header class="h-14 bg-white dark:bg-messenger-darkSidebar border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 z-10 shrink-0">
+      <div class="flex items-center space-x-3">
+        <div class="bg-gradient-to-tr from-blue-600 to-indigo-500 text-white p-2 rounded-full shadow-md flex items-center justify-center w-9 h-9">
+          <i class="fa-solid font-bold text-lg fa-bolt"></i>
+        </div>
+        <span class="font-bold text-lg tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-500">
+          Messenger Cloud
+        </span>
+        <span id="demo-badge" class="hidden text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+          Demo Mode (Local)
+        </span>
+        <span id="firebase-badge" class="hidden text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+          Firebase Online
+        </span>
+      </div>
+
+      <div class="flex items-center space-x-2">
+        <!-- Config Modal Trigger Button -->
+        <button id="open-config-btn" class="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition" title="Firebase Settings">
+          <i class="fa-solid fa-gear text-lg"></i>
+        </button>
+        <!-- Dark Mode Toggle -->
+        <button id="theme-toggle" class="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition" title="Toggle Theme">
+          <i id="theme-icon" class="fa-solid fa-moon text-lg"></i>
+        </button>
+        <!-- Logout Button -->
+        <button id="logout-btn" class="hidden flex items-center space-x-1 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition">
+          <i class="fa-solid fa-right-from-bracket"></i>
+          <span class="hidden sm:inline">Logout</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- MAIN BODY SECTION -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+      <!-- AUTH SCREEN (LOGIN / SIGNUP) -->
+      <div id="auth-screen" class="absolute inset-0 bg-gray-50 dark:bg-messenger-darkBg z-20 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-messenger-darkSidebar w-full max-w-md p-8 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 transition-all">
+          <div class="text-center mb-6">
+            <div class="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center text-white text-3xl mx-auto mb-3 shadow-lg shadow-blue-500/30">
+              <i class="fa-solid fa-comments"></i>
+            </div>
+            <h2 class="text-2xl font-bold dark:text-white">Welcome back</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Sign in to sync your conversation history</p>
+          </div>
+
+          <!-- Auth Error Banner -->
+          <div id="auth-error" class="hidden mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm flex items-center space-x-2">
+            <i class="fa-solid fa-circle-exclamation"></i>
+            <span id="auth-error-text">An error occurred</span>
+          </div>
+
+          <form id="auth-form" class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase mb-1">Email</label>
+              <input type="email" id="auth-email" required class="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-messenger-darkBg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase mb-1">Password</label>
+              <input type="password" id="auth-password" required minlength="6" class="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-messenger-darkBg focus:ring-2 focus:ring-blue-500 outline-none transition text-sm">
+            </div>
+
+            <button type="submit" id="auth-submit-btn" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-md transition duration-200 text-sm">
+              Sign In
+            </button>
+          </form>
+
+          <div class="relative my-6 flex items-center justify-center">
+            <div class="border-t border-gray-200 dark:border-gray-700 w-full"></div>
+            <span class="bg-white dark:bg-messenger-darkSidebar px-3 text-xs text-gray-400 uppercase font-semibold absolute">Or continue with</span>
+          </div>
+
+          <div class="space-y-2">
+            <button id="google-login-btn" type="button" class="w-full py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl font-medium text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition flex items-center justify-center space-x-2 text-gray-700 dark:text-gray-200">
+              <svg class="w-4 h-4" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              </svg>
+              <span>Google Account</span>
+            </button>
+
+            <button id="demo-login-btn" type="button" class="w-full py-2.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-xl font-medium text-sm hover:bg-amber-500/20 transition flex items-center justify-center space-x-2">
+              <i class="fa-solid fa-play text-xs"></i>
+              <span>Quick Demo Mode (No Setup Required)</span>
+            </button>
+          </div>
+
+          <div class="mt-6 text-center text-xs text-gray-500">
+            <span id="auth-toggle-text">Don't have an account?</span>
+            <button id="auth-toggle-btn" class="text-blue-600 font-semibold hover:underline ml-1">Sign Up</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- MAIN CHAT INTERFACE -->
+      <!-- Sidebar / Active Users -->
+      <aside class="w-80 bg-white dark:bg-messenger-darkSidebar border-r border-gray-200 dark:border-gray-800 flex flex-col shrink-0 hidden md:flex">
+        <!-- Search bar -->
+        <div class="p-3">
+          <div class="bg-gray-100 dark:bg-messenger-darkBg rounded-full flex items-center px-3 py-2 text-sm text-gray-500">
+            <i class="fa-solid fa-magnifying-glass mr-2"></i>
+            <input type="text" placeholder="Search Messenger..." class="bg-transparent outline-none w-full text-xs text-gray-800 dark:text-gray-100">
+          </div>
+        </div>
+
+        <!-- Current User Profile summary -->
+        <div id="user-profile-bar" class="p-3 border-b border-gray-100 dark:border-gray-800/60 flex items-center space-x-3">
+          <div class="relative">
+            <img id="my-avatar" src="https://placehold.co/100x100/0084FF/ffffff?text=U" class="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-700">
+            <span class="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-messenger-darkSidebar rounded-full"></span>
+          </div>
+          <div class="flex-1 overflow-hidden">
+            <h4 id="my-name" class="text-sm font-semibold truncate dark:text-white">User Name</h4>
+            <p id="my-status" class="text-xs text-emerald-500 font-medium">Active now</p>
+          </div>
+        </div>
+
+        <!-- Chat Room Header -->
+        <div class="px-4 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+          Active Channels
+        </div>
+
+        <!-- Channels list -->
+        <div class="flex-1 overflow-y-auto space-y-1 p-2">
+          <div class="flex items-center space-x-3 p-2.5 bg-blue-50 dark:bg-blue-900/20 rounded-xl cursor-pointer">
+            <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow">
+              #
+            </div>
+            <div class="flex-1 overflow-hidden">
+              <div class="flex justify-between items-baseline">
+                <h5 class="text-sm font-semibold truncate dark:text-white">Global Lobby</h5>
+                <span class="text-[10px] text-blue-500 font-medium">Live</span>
+              </div>
+              <p class="text-xs text-gray-500 dark:text-gray-400 truncate">General public conversation</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Messaging Area -->
+      <main class="flex-1 flex flex-col bg-white dark:bg-messenger-darkBg relative">
+
+        <!-- Chat Top Bar -->
+        <div class="h-14 border-b border-gray-200 dark:border-gray-800 px-4 flex items-center justify-between bg-white dark:bg-messenger-darkBg shrink-0">
+          <div class="flex items-center space-x-3">
+            <div class="relative">
+              <div class="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
+                <i class="fa-solid fa-globe"></i>
+              </div>
+            </div>
+            <div>
+              <h3 class="font-bold text-sm dark:text-white">Global Public Chat</h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block mr-1.5"></span>
+                Real-time connection active
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-3 text-blue-500 text-lg">
+            <button class="hover:opacity-80 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+              <i class="fa-solid fa-phone"></i>
+            </button>
+            <button class="hover:opacity-80 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+              <i class="fa-solid fa-video"></i>
+            </button>
+            <button class="hover:opacity-80 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition">
+              <i class="fa-solid fa-circle-info"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Message List Container -->
+        <div id="messages-container" class="flex-1 p-4 overflow-y-auto space-y-3 flex flex-col">
+          <!-- Loading State -->
+          <div id="messages-loading" class="flex-1 flex items-center justify-center">
+            <div class="flex flex-col items-center space-y-2 text-gray-400">
+              <i class="fa-solid fa-circle-notch fa-spin text-2xl text-blue-500"></i>
+              <span class="text-xs">Loading messages history...</span>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div id="messages-empty" class="hidden flex-1 flex flex-col items-center justify-center text-center p-6 text-gray-400">
+            <i class="fa-regular fa-comments text-5xl mb-3 text-gray-300 dark:text-gray-600"></i>
+            <h4 class="font-semibold text-gray-600 dark:text-gray-300">No messages yet</h4>
+            <p class="text-xs max-w-xs mt-1">Be the first to say hi to everyone in the channel!</p>
+          </div>
+
+          <!-- Messages injected dynamically -->
+          <div id="messages-list" class="space-y-3 flex-1 flex flex-col justify-end"></div>
+        </div>
+
+        <!-- Message Input Bar -->
+        <div class="p-3 border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-messenger-darkBg shrink-0">
+          <form id="send-message-form" class="flex items-center space-x-2">
+            <button type="button" class="p-2 text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition">
+              <i class="fa-solid fa-circle-plus text-lg"></i>
+            </button>
+            <button type="button" class="p-2 text-blue-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition hidden sm:block">
+              <i class="fa-solid fa-image text-lg"></i>
+            </button>
+            
+            <div class="flex-1 relative">
+              <input 
+                type="text" 
+                id="message-input" 
+                placeholder="Aa" 
+                autocomplete="off"
+                class="w-full bg-gray-100 dark:bg-messenger-darkSidebar border-0 rounded-full px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition"
+              >
+            </div>
+
+            <button type="submit" id="send-btn" class="p-2.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-gray-800 rounded-full transition flex items-center justify-center">
+              <i class="fa-solid fa-paper-plane text-lg"></i>
+            </button>
+          </form>
+        </div>
+
+      </main>
+    </div>
+
+    <!-- CONFIGURATION SETTINGS MODAL -->
+    <div id="config-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+      <div class="bg-white dark:bg-messenger-darkSidebar w-full max-w-lg rounded-2xl shadow-2xl p-6 border border-gray-100 dark:border-gray-800">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-lg font-bold dark:text-white flex items-center space-x-2">
+            <i class="fa-solid fa-sliders text-blue-500"></i>
+            <span>Firebase Configuration</span>
+          </h3>
+          <button id="close-config-btn" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
+          Enter your Firebase Project keys below to connect real-time auth and persistent message storage. If left empty, local demo mode will be activated automatically.
+        </p>
+
+        <form id="config-form" class="space-y-3">
+          <div>
+            <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">API Key</label>
+            <input type="text" id="cfg-apiKey" placeholder="AIzaSy..." class="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-messenger-darkBg outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">Auth Domain</label>
+            <input type="text" id="cfg-authDomain" placeholder="my-app.firebaseapp.com" class="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-messenger-darkBg outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">Project ID</label>
+            <input type="text" id="cfg-projectId" placeholder="my-app-id" class="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-messenger-darkBg outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">Storage Bucket</label>
+            <input type="text" id="cfg-storageBucket" placeholder="my-app.appspot.com" class="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-messenger-darkBg outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">App ID</label>
+            <input type="text" id="cfg-appId" placeholder="1:123456789:web:abcdef" class="w-full px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-messenger-darkBg outline-none focus:ring-2 focus:ring-blue-500 dark:text-white">
+          </div>
+
+          <div class="pt-4 flex items-center justify-end space-x-2">
+            <button type="button" id="clear-config-btn" class="px-4 py-2 text-xs font-semibold text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition">
+              Reset Config
+            </button>
+            <button type="submit" class="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-md">
+              Save & Reload
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- APPLICATION JAVASCRIPT LOGIC -->
+  <script type="module">
+    // Import Firebase v11 Modular Web SDKs
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+    import { 
+      getAuth, 
+      signInWithEmailAndPassword, 
+      createUserWithEmailAndPassword, 
+      signInWithPopup, 
+      GoogleAuthProvider, 
+      onAuthStateChanged, 
+      signOut 
+    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+    import { 
+      getFirestore, 
+      collection, 
+      addDoc, 
+      onSnapshot, 
+      serverTimestamp 
+    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+
+    // Global Application State
+    let app, auth, db;
+    let currentUser = null;
+    let isSignUpMode = false;
+    let isDemoMode = false;
+    let unsubscribeMessages = null;
+
+    // DOM Elements
+    const authScreen = document.getElementById('auth-screen');
+    const authForm = document.getElementById('auth-form');
+    const authSubmitBtn = document.getElementById('auth-submit-btn');
+    const authToggleBtn = document.getElementById('auth-toggle-btn');
+    const authToggleText = document.getElementById('auth-toggle-text');
+    const authError = document.getElementById('auth-error');
+    const authErrorText = document.getElementById('auth-error-text');
+    const googleLoginBtn = document.getElementById('google-login-btn');
+    const demoLoginBtn = document.getElementById('demo-login-btn');
+    const logoutBtn = document.getElementById('logout-btn');
+
+    const myAvatar = document.getElementById('my-avatar');
+    const myName = document.getElementById('my-name');
+
+    const messagesLoading = document.getElementById('messages-loading');
+    const messagesEmpty = document.getElementById('messages-empty');
+    const messagesList = document.getElementById('messages-list');
+    const sendMessageForm = document.getElementById('send-message-form');
+    const messageInput = document.getElementById('message-input');
+    const messagesContainer = document.getElementById('messages-container');
+
+    const demoBadge = document.getElementById('demo-badge');
+    const firebaseBadge = document.getElementById('firebase-badge');
+
+    const configModal = document.getElementById('config-modal');
+    const openConfigBtn = document.getElementById('open-config-btn');
+    const closeConfigBtn = document.getElementById('close-config-btn');
+    const configForm = document.getElementById('config-form');
+    const clearConfigBtn = document.getElementById('clear-config-btn');
+
+    // Theme Toggle Handler
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+
+    themeToggle.addEventListener('click', () => {
+      document.documentElement.classList.toggle('dark');
+      if (document.documentElement.classList.contains('dark')) {
+        themeIcon.className = 'fa-solid fa-sun text-lg text-amber-400';
+      } else {
+        themeIcon.className = 'fa-solid fa-moon text-lg';
+      }
+    });
+
+    // Load saved Firebase configuration or fall back to system defaults
+    function getFirebaseConfig() {
+      const saved = localStorage.getItem('messenger_firebase_config');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch(e) {
+          console.error("Failed to parse stored config", e);
+        }
+      }
+      
+      // Auto-check for platform environment variables if available
+      if (typeof __firebase_config !== 'undefined') {
+        try {
+          return JSON.parse(__firebase_config);
+        } catch(e) {}
+      }
+
+      return null;
+    }
+
+    // Initialize Firebase Services
+    function initFirebase() {
+      const config = getFirebaseConfig();
+
+      if (config && config.apiKey && config.projectId) {
+        try {
+          app = initializeApp(config);
+          auth = getAuth(app);
+          db = getFirestore(app);
+          
+          isDemoMode = false;
+          firebaseBadge.classList.remove('hidden');
+          demoBadge.classList.add('hidden');
+
+          // Listen to Auth State Changes (F5 Persistence)
+          onAuthStateChanged(auth, (user) => {
+            if (user) {
+              currentUser = {
+                uid: user.uid,
+                displayName: user.displayName || user.email.split('@')[0],
+                email: user.email,
+                photoURL: user.photoURL || `https://placehold.co/100x100/0084FF/ffffff?text=${(user.email[0]).toUpperCase()}`
+              };
+              onLoggedIn();
+            } else {
+              currentUser = null;
+              onLoggedOut();
+            }
+          });
+          return;
+        } catch (err) {
+          console.warn("Firebase initialization error, switching to Demo Mode:", err);
+        }
+      }
+
+      // Fallback: Enable Demo Mode
+      enableDemoMode();
+    }
+
+    function enableDemoMode() {
+      isDemoMode = true;
+      demoBadge.classList.remove('hidden');
+      firebaseBadge.classList.add('hidden');
+
+      // Check stored session in localStorage for demo persistence across F5
+      const storedDemoUser = localStorage.getItem('messenger_demo_user');
+      if (storedDemoUser) {
+        currentUser = JSON.parse(storedDemoUser);
+        onLoggedIn();
+      } else {
+        onLoggedOut();
+      }
+    }
+
+    // UI Handlers for Authentication States
+    function onLoggedIn() {
+      authScreen.classList.add('hidden');
+      logoutBtn.classList.remove('hidden');
+
+      myAvatar.src = currentUser.photoURL;
+      myName.textContent = currentUser.displayName;
+
+      // Start fetching messages
+      listenToMessages();
+    }
+
+    function onLoggedOut() {
+      authScreen.classList.remove('hidden');
+      logoutBtn.classList.add('hidden');
+      messagesList.innerHTML = '';
+
+      if (unsubscribeMessages) {
+        unsubscribeMessages();
+        unsubscribeMessages = null;
+      }
+    }
+
+    // Auth Mode Switcher (Login vs Sign Up)
+    authToggleBtn.addEventListener('click', () => {
+      isSignUpMode = !isSignUpMode;
+      authError.classList.add('hidden');
+      if (isSignUpMode) {
+        authSubmitBtn.textContent = 'Create Account';
+        authToggleText.textContent = 'Already have an account?';
+        authToggleBtn.textContent = 'Sign In';
+      } else {
+        authSubmitBtn.textContent = 'Sign In';
+        authToggleText.textContent = "Don't have an account?";
+        authToggleBtn.textContent = 'Sign Up';
+      }
+    });
+
+    // Form Login / Sign Up Submit
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      authError.classList.add('hidden');
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
+
+      if (isDemoMode) {
+        // Handle Demo mode login
+        currentUser = {
+          uid: 'demo-' + Date.now(),
+          displayName: email.split('@')[0] || 'Demo User',
+          email: email,
+          photoURL: `https://placehold.co/100x100/0084FF/ffffff?text=${(email[0] || 'D').toUpperCase()}`
+        };
+        localStorage.setItem('messenger_demo_user', JSON.stringify(currentUser));
+        onLoggedIn();
+        return;
+      }
+
+      try {
+        if (isSignUpMode) {
+          await createUserWithEmailAndPassword(auth, email, password);
+        } else {
+          await signInWithEmailAndPassword(auth, email, password);
+        }
+      } catch (err) {
+        showAuthError(err.message);
+      }
+    });
+
+    // Google Sign-In
+    googleLoginBtn.addEventListener('click', async () => {
+      authError.classList.add('hidden');
+      if (isDemoMode) {
+        currentUser = {
+          uid: 'google-demo-123',
+          displayName: 'Google User (Demo)',
+          email: 'googleuser@demo.com',
+          photoURL: 'https://placehold.co/100x100/4285F4/ffffff?text=G'
+        };
+        localStorage.setItem('messenger_demo_user', JSON.stringify(currentUser));
+        onLoggedIn();
+        return;
+      }
+
+      try {
+        const provider = new GoogleAuthProvider();
+        await signInWithPopup(auth, provider);
+      } catch (err) {
+        showAuthError(err.message);
+      }
+    });
+
+    // Quick Demo Login Button
+    demoLoginBtn.addEventListener('click', () => {
+      currentUser = {
+        uid: 'demo-user-' + Math.floor(Math.random() * 1000),
+        displayName: 'Guest User',
+        email: 'guest@messenger.demo',
+        photoURL: 'https://placehold.co/100x100/0084FF/ffffff?text=G'
+      };
+      localStorage.setItem('messenger_demo_user', JSON.stringify(currentUser));
+      onLoggedIn();
+    });
+
+    // Logout
+    logoutBtn.addEventListener('click', async () => {
+      if (isDemoMode) {
+        localStorage.removeItem('messenger_demo_user');
+        currentUser = null;
+        onLoggedOut();
+      } else {
+        await signOut(auth);
+      }
+    });
+
+    function showAuthError(msg) {
+      authErrorText.textContent = msg.replace('Firebase:', '').trim();
+      authError.classList.remove('hidden');
+    }
+
+    // REALTIME MESSAGES LISTENER
+    function listenToMessages() {
+      messagesLoading.classList.remove('hidden');
+      messagesEmpty.classList.add('hidden');
+
+      if (isDemoMode) {
+        // Load initial mock messages from LocalStorage
+        let mockMessages = JSON.parse(localStorage.getItem('messenger_demo_messages') || '[]');
+        if (mockMessages.length === 0) {
+          mockMessages = [
+            {
+              id: '1',
+              text: 'Welcome to Messenger Cloud! 👋 This is a real-time persistent chat experience.',
+              displayName: 'Messenger Bot',
+              photoURL: 'https://placehold.co/100x100/0084FF/ffffff?text=M',
+              uid: 'bot-1',
+              createdAt: Date.now() - 60000
+            }
+          ];
+          localStorage.setItem('messenger_demo_messages', JSON.stringify(mockMessages));
+        }
+        renderMessages(mockMessages);
+        messagesLoading.classList.add('hidden');
+        return;
+      }
+
+      // Firestore Realtime Listener
+      try {
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'messenger-app';
+        // Rule-compliant collection path
+        const messagesRef = collection(db, 'artifacts', appId, 'public', 'data', 'messages');
+
+        unsubscribeMessages = onSnapshot(messagesRef, (snapshot) => {
+          messagesLoading.classList.add('hidden');
+          const docs = [];
+          snapshot.forEach(doc => {
+            docs.push({ id: doc.id, ...doc.data() });
+          });
+
+          // Sort by timestamp in memory (avoids composite index requirements)
+          docs.sort((a, b) => (a.createdAt?.toMillis?.() || a.createdAt || 0) - (b.createdAt?.toMillis?.() || b.createdAt || 0));
+
+          renderMessages(docs);
+        }, (error) => {
+          console.error("Firestore Listener Error:", error);
+          messagesLoading.classList.add('hidden');
+        });
+      } catch (err) {
+        console.error("Error setting up listener:", err);
+        messagesLoading.classList.add('hidden');
+      }
+    }
+
+    // Send Message Handler
+    sendMessageForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = messageInput.value.trim();
+      if (!text || !currentUser) return;
+
+      messageInput.value = '';
+
+      if (isDemoMode) {
+        let mockMessages = JSON.parse(localStorage.getItem('messenger_demo_messages') || '[]');
+        const newMsg = {
+          id: 'demo-' + Date.now(),
+          text: text,
+          displayName: currentUser.displayName,
+          photoURL: currentUser.photoURL,
+          uid: currentUser.uid,
+          createdAt: Date.now()
+        };
+        mockMessages.push(newMsg);
+        localStorage.setItem('messenger_demo_messages', JSON.stringify(mockMessages));
+        renderMessages(mockMessages);
+        return;
+      }
+
+      try {
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'messenger-app';
+        const messagesRef = collection(db, 'artifacts', appId, 'public', 'data', 'messages');
+
+        await addDoc(messagesRef, {
+          text: text,
+          uid: currentUser.uid,
+          displayName: currentUser.displayName,
+          photoURL: currentUser.photoURL,
+          createdAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error("Error sending message:", err);
+      }
+    });
+
+    // Render Messages UI
+    function renderMessages(messages) {
+      if (!messages || messages.length === 0) {
+        messagesEmpty.classList.remove('hidden');
+        messagesList.innerHTML = '';
+        return;
+      }
+
+      messagesEmpty.classList.add('hidden');
+      messagesList.innerHTML = '';
+
+      messages.forEach(msg => {
+        const isMine = msg.uid === currentUser?.uid;
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `flex items-end space-x-2 ${isMine ? 'justify-end' : 'justify-start'}`;
+
+        const timeStr = formatTime(msg.createdAt);
+
+        if (isMine) {
+          msgDiv.innerHTML = `
+            <div class="flex flex-col items-end max-w-[75%] sm:max-w-[65%]">
+              <span class="text-[10px] text-gray-400 mb-0.5 px-1">${timeStr}</span>
+              <div class="bg-messenger-blue text-white px-4 py-2.5 rounded-2xl rounded-br-none message-shadow text-sm leading-relaxed break-words">
+                ${escapeHTML(msg.text)}
+              </div>
+            </div>
+          `;
+        } else {
+          msgDiv.innerHTML = `
+            <img src="${msg.photoURL || 'https://placehold.co/100x100/0084FF/ffffff?text=U'}" class="w-7 h-7 rounded-full object-cover mb-1 border border-gray-200 dark:border-gray-700">
+            <div class="flex flex-col items-start max-w-[75%] sm:max-w-[65%]">
+              <span class="text-[10px] font-semibold text-gray-500 dark:text-gray-400 mb-0.5 px-1">${escapeHTML(msg.displayName || 'User')} • ${timeStr}</span>
+              <div class="bg-messenger-lightBubble dark:bg-messenger-darkBubble text-gray-800 dark:text-gray-100 px-4 py-2.5 rounded-2xl rounded-bl-none message-shadow text-sm leading-relaxed break-words">
+                ${escapeHTML(msg.text)}
+              </div>
+            </div>
+          `;
+        }
+
+        messagesList.appendChild(msgDiv);
+      });
+
+      // Auto-scroll to bottom
+      scrollToBottom();
+    }
+
+    function scrollToBottom() {
+      setTimeout(() => {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }, 50);
+    }
+
+    function formatTime(timestamp) {
+      if (!timestamp) return 'Just now';
+      let date;
+      if (timestamp.toMillis) {
+        date = new Date(timestamp.toMillis());
+      } else if (typeof timestamp === 'number') {
+        date = new Date(timestamp);
+      } else {
+        return 'Just now';
+      }
+
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/[&<>'"]/g, 
+        tag => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          "'": '&#39;',
+          '"': '&quot;'
+        }[tag] || tag)
+      );
+    }
+
+    // Config Modal Controls
+    openConfigBtn.addEventListener('click', () => {
+      const config = getFirebaseConfig() || {};
+      document.getElementById('cfg-apiKey').value = config.apiKey || '';
+      document.getElementById('cfg-authDomain').value = config.authDomain || '';
+      document.getElementById('cfg-projectId').value = config.projectId || '';
+      document.getElementById('cfg-storageBucket').value = config.storageBucket || '';
+      document.getElementById('cfg-appId').value = config.appId || '';
+
+      configModal.classList.remove('hidden');
+    });
+
+    closeConfigBtn.addEventListener('click', () => {
+      configModal.classList.add('hidden');
+    });
+
+    configForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const newConfig = {
+        apiKey: document.getElementById('cfg-apiKey').value.trim(),
+        authDomain: document.getElementById('cfg-authDomain').value.trim(),
+        projectId: document.getElementById('cfg-projectId').value.trim(),
+        storageBucket: document.getElementById('cfg-storageBucket').value.trim(),
+        appId: document.getElementById('cfg-appId').value.trim()
+      };
+
+      localStorage.setItem('messenger_firebase_config', JSON.stringify(newConfig));
+      window.location.reload();
+    });
+
+    clearConfigBtn.addEventListener('click', () => {
+      localStorage.removeItem('messenger_firebase_config');
+      window.location.reload();
+    });
+
+    // Run Initialization on Load
+    window.addEventListener('DOMContentLoaded', () => {
+      initFirebase();
+    });
+  </script>
+</body>
+</html>
