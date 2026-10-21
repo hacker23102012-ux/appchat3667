@@ -20,51 +20,65 @@
     </script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Firebase SDKs -->
+    
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
         // =========================================================================
-        // 🔑 DÁN CẤU HÌNH FIREBASE CỦA BẠN VÀO ĐÂY ĐỂ ĐỒNG BỘ TIN NHẮN GIỮA CÁC TAB/MÁY
+        // Điền Firebase Config thật vào đây NẾU CÓ. Nếu để trống, web tự chạy Local Sync.
         // =========================================================================
-        const DEFAULT_FIREBASE_CONFIG = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT.firebaseapp.com",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT.appspot.com",
-            messagingSenderId: "YOUR_SENDER_ID",
-            appId: "YOUR_APP_ID"
+        const FIREBASE_CONFIG = {
+            apiKey: "", 
+            authDomain: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: ""
         };
 
-        let app, auth, db;
+        let app = null, auth = null, db = null;
+        let useFirebase = false;
+
+        // Kiểm tra xem config có hợp lệ không
+        if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "") {
+            try {
+                app = initializeApp(FIREBASE_CONFIG);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                useFirebase = true;
+            } catch(e) {
+                console.warn("Chưa cấu hình Firebase hợp lệ, tự chuyển sang chế độ Local/Multi-tab.");
+            }
+        }
+
         let currentUser = null;
         let unsubscribeMessages = null;
 
-        // Tự động khởi tạo Firebase
-        try {
-            app = initializeApp(DEFAULT_FIREBASE_CONFIG);
-            auth = getAuth(app);
-            db = getFirestore(app);
-            setupAuthListener();
-        } catch(e) {
-            console.warn("Chưa cấu hình Firebase thật, đang chạy chế độ BroadcastChannel giữa các tab.");
-        }
-
-        // Kênh đồng bộ tin nhắn giữa các Tab khi chưa cắm Firebase
-        const broadcast = new BroadcastChannel('messenger_tab_sync');
+        // Đồng bộ tin nhắn giữa các tab trình duyệt
+        const channel = new BroadcastChannel('messenger_sync');
         let localMessages = JSON.parse(localStorage.getItem('shared_chat_msgs') || '[]');
 
-        broadcast.onmessage = (event) => {
+        channel.onmessage = (event) => {
             if (event.data && event.data.type === 'NEW_MSG') {
                 localMessages.push(event.data.msg);
+                localStorage.setItem('shared_chat_msgs', JSON.stringify(localMessages));
                 renderMessagesUI(localMessages);
             }
         };
 
         window.addEventListener('DOMContentLoaded', () => {
             initAppUI();
+            if (useFirebase) {
+                setupAuthListener();
+            } else {
+                // Kiểm tra tài khoản đã đăng nhập trong máy
+                const savedUser = localStorage.getItem('app_user');
+                if (savedUser) {
+                    loginSuccess(JSON.parse(savedUser));
+                }
+            }
         });
 
         function initAppUI() {
@@ -87,8 +101,8 @@
                                 <input type="text" id="input-name" class="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="Nhập tên của bạn...">
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase mb-1">Email</label>
-                                <input type="email" id="input-email" required class="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="name@example.com">
+                                <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase mb-1">Email / Tên tài khoản</label>
+                                <input type="text" id="input-email" required class="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="name@example.com">
                             </div>
                             <div>
                                 <label class="block text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase mb-1">Mật khẩu</label>
@@ -124,7 +138,7 @@
                                     <i class="fa-solid fa-moon dark:hidden"></i>
                                     <i class="fa-solid fa-sun hidden dark:block text-amber-400"></i>
                                 </button>
-                                <button onclick="logout()" class="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center justify-center text-gray-600 dark:text-red-400 transition">
+                                <button onclick="logout()" class="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center justify-center text-gray-600 dark:text-red-400 transition" title="Đăng xuất">
                                     <i class="fa-solid fa-right-from-bracket"></i>
                                 </button>
                             </div>
@@ -142,7 +156,7 @@
                                         <h4 class="font-semibold text-gray-900 dark:text-white text-sm truncate">Phòng Chat Chung</h4>
                                         <span class="text-xs text-blue-500 font-medium">Online</span>
                                     </div>
-                                    <p id="last-message-preview" class="text-xs text-gray-500 dark:text-gray-400 truncate">Sẵn sàng nhắn tin...</p>
+                                    <p id="last-message-preview" class="text-xs text-gray-500 dark:text-gray-400 truncate">Trò chuyện trực tuyến...</p>
                                 </div>
                             </div>
                         </div>
@@ -161,10 +175,10 @@
                             </div>
                         </div>
 
-                        <!-- Messages Container: Dùng flex-col + justify-end để tin nhắn đẩy từ DƯỚI LÊN -->
+                        <!-- Messages Container: Dùng flex-col + justify-end để đẩy tin nhắn xuống dưới -->
                         <div id="messages-wrapper" class="flex-1 overflow-y-auto p-6 bg-gray-50/50 dark:bg-gray-950/30 flex flex-col justify-end">
                             <div id="messages-container" class="space-y-4 w-full">
-                                <!-- Tin nhắn được render vào đây -->
+                                <!-- Tin nhắn render ở đây -->
                             </div>
                         </div>
 
@@ -215,11 +229,11 @@
 
             authForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const email = document.getElementById('input-email').value;
+                const email = document.getElementById('input-email').value.trim();
                 const password = document.getElementById('input-password').value;
-                const name = document.getElementById('input-name').value;
+                const name = document.getElementById('input-name').value.trim();
 
-                if (auth) {
+                if (useFirebase && auth) {
                     try {
                         if (isRegisterMode) {
                             await createUserWithEmailAndPassword(auth, email, password);
@@ -229,12 +243,18 @@
                             showToast("Đăng nhập thành công!", "success");
                         }
                     } catch (err) {
-                        showToast("Lỗi: " + err.message, "error");
+                        showToast("Lỗi Firebase: " + err.message, "error");
                     }
                 } else {
-                    // Fallback khi chưa cấu hình Firebase
-                    const user = { uid: email, email, name: name || email.split('@')[0], avatar: (name || email).charAt(0).toUpperCase() };
-                    localStorage.setItem('temp_user', JSON.stringify(user));
+                    // Chạy mượt mà không bị lỗi khi chưa có Firebase
+                    const user = {
+                        uid: 'user_' + email.replace(/[^a-zA-Z0-9]/g, '_'),
+                        email: email,
+                        name: name || email.split('@')[0],
+                        avatar: (name || email).charAt(0).toUpperCase()
+                    };
+                    localStorage.setItem('app_user', JSON.stringify(user));
+                    showToast("Đăng nhập thành công!", "success");
                     loginSuccess(user);
                 }
             });
@@ -245,18 +265,18 @@
                 const text = input.value.trim();
                 if (!text) return;
 
-                const user = currentUser || JSON.parse(localStorage.getItem('temp_user') || '{}');
+                const user = currentUser || JSON.parse(localStorage.getItem('app_user') || '{}');
                 if (!user.email) return;
 
                 const messageData = {
                     text: text,
                     uid: user.uid,
                     senderName: user.name || user.email.split('@')[0],
-                    avatar: (user.name || user.email).charAt(0).toUpperCase(),
+                    avatar: user.avatar || (user.name || user.email).charAt(0).toUpperCase(),
                     createdAt: Date.now()
                 };
 
-                if (db) {
+                if (useFirebase && db) {
                     try {
                         messageData.createdAt = serverTimestamp();
                         await addDoc(collection(db, "messages"), messageData);
@@ -265,20 +285,14 @@
                         showToast("Lỗi gửi tin nhắn: " + err.message, "error");
                     }
                 } else {
-                    // Đồng bộ tin nhắn giữa các tab bằng BroadcastChannel & LocalStorage
+                    // Đồng bộ tức thì giữa các tab
                     localMessages.push(messageData);
                     localStorage.setItem('shared_chat_msgs', JSON.stringify(localMessages));
-                    broadcast.postMessage({ type: 'NEW_MSG', msg: messageData });
+                    channel.postMessage({ type: 'NEW_MSG', msg: messageData });
                     renderMessagesUI(localMessages);
                     input.value = '';
                 }
             });
-
-            // Tự động giữ phiên đăng nhập local nếu không dùng Firebase Auth
-            const savedTempUser = localStorage.getItem('temp_user');
-            if (!auth && savedTempUser) {
-                loginSuccess(JSON.parse(savedTempUser));
-            }
         }
 
         function setupAuthListener() {
@@ -306,7 +320,7 @@
             document.getElementById('user-display-name').textContent = user.name || user.email;
             document.getElementById('user-avatar').textContent = user.avatar || user.email.charAt(0).toUpperCase();
 
-            if (!db) {
+            if (!useFirebase) {
                 renderMessagesUI(localMessages);
             }
         }
@@ -318,10 +332,10 @@
         }
 
         window.logout = function() {
-            if (auth) {
+            if (useFirebase && auth) {
                 signOut(auth);
             } else {
-                localStorage.removeItem('temp_user');
+                localStorage.removeItem('app_user');
                 logoutSuccess();
             }
         }
@@ -340,7 +354,7 @@
         function renderMessagesUI(msgs) {
             const container = document.getElementById('messages-container');
             const wrapper = document.getElementById('messages-wrapper');
-            const activeUser = currentUser || JSON.parse(localStorage.getItem('temp_user') || '{}');
+            const activeUser = currentUser || JSON.parse(localStorage.getItem('app_user') || '{}');
             if (!activeUser.email) return;
 
             let html = '';
